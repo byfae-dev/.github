@@ -46,6 +46,12 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
           MIN: ${{ inputs.diff-coverage }}
-        run: pipx run diff-cover coverage/lcov.info --compare-branch="origin/$BASE" --fail-under="$MIN"
+          WD: ${{ inputs.working-directory }}
+        # bun writes lcov paths relative to the project (src/x.ts); git diffs from the repo root
+        # (web/src/x.ts). Without the prefix nothing matches and diff-cover silently passes.
+        run: |
+          prefix="${WD#./}"; [ "$prefix" = "." ] && prefix=""
+          sed "s#^SF:#SF:${prefix:+$prefix/}#" coverage/lcov.info > coverage/lcov.repo.info
+          pipx run diff-cover coverage/lcov.repo.info --compare-branch="origin/$BASE" --fail-under="$MIN"
       - name: build
         run: bun run build
