@@ -1,0 +1,6 @@
+# name|color|description — synced to repos by scripts/sync-labels.sh
+agent:todo|0E8A16|Ready for an agent to pick up
+agent:doing|1D76DB|An agent run is in progress
+agent:review|5319E7|PR open, Reviewer agent checking
+board:approve|FBCA04|Waiting for the board to merge/approve
+board:question|D93F0B|Blocked: needs a board decision
