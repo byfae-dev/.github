@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
       - name: Lint PR title with commitlint
         env:
           # Passed via env, never interpolated into the script: PR titles are untrusted input.
@@ -35,8 +38,8 @@ jobs:
             },
           };
           JS
-          npm install --no-save --silent @commitlint/cli@21 @commitlint/config-conventional@21
-          printf '%s\n' "$TITLE" | npx --no-install commitlint --verbose
+          bun add --silent @commitlint/cli@21 @commitlint/config-conventional@21
+          printf '%s\n' "$TITLE" | bunx --bun commitlint --verbose
 
   flow:
     name: branch flow
