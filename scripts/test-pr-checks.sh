@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Self-check for .github/workflows/pr-checks.yml: extracts the real step scripts and runs them
+# against known-good and known-bad cases. Needs node + python3 with PyYAML.
+set -uo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd); tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; cd "$tmp"
+python3 - "$root/.github/workflows/pr-checks.yml" <<'PY'
+import sys, yaml
+w = yaml.safe_load(open(sys.argv[1]))
+open("title.sh", "w").write(w["jobs"]["title"]["steps"][0]["run"].replace(" --verbose", ""))
+open("flow.sh", "w").write(w["jobs"]["flow"]["steps"][0]["run"])
+PY
+fails=0
+check() { [ "$1" = "$2" ] && echo "ok   $3" || { echo "FAIL $3 (got $1)"; fails=$((fails+1)); }; }
+t() { TITLE="$1" SCOPES="$2" bash title.sh >/dev/null 2>&1 && r=pass || r=fail; check $r "$3" "title: $1"; }
+f() { HEAD=$1 BASE=$2 BODY="$3" bash flow.sh >/dev/null 2>&1 && r=pass || r=fail; check $r "$4" "flow: $1 → $2"; }
+
+t "docs: add PRD" "" pass
+t "feat(api): add run listing endpoint" "api,web" pass
+t "feat(nope): x" "api,web" fail
+t "Added stuff" "" fail
+t "style: reformat" "" fail
+t "feat: Add Thing" "" fail
+t "feat: $(printf 'x%.0s' {1..80})" "" fail
+f fae/4-x dev "Closes #4" pass
+f fae/4-x dev "Closes byfae-dev/project-fae#4" pass
+f fae/4-x dev "no link" fail
+f fae/4-x main "Closes #4" fail
+f dev staging "" pass
+f staging dev "" pass
+f dev main "" fail
+f staging main "" pass
+f hotfix/9-y main "Fixes #9" pass
+f release-please--branches--main main "" pass
+f random dev "" fail
+f fae/5-y fae/4-x "" pass
+exit $fails
