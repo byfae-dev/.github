@@ -26,6 +26,9 @@ t "feat: $(printf 'x%.0s' {1..80})" "" fail
 f fae/4-x dev "Closes #4" pass
 f fae/4-x dev "Closes byfae-dev/project-fae#4" pass
 f fae/4-x dev "no link" fail
+f fae/22-x dev "Refs byfae-dev/project-fae#22" pass
+f fae/22-x dev "Refs: #22" pass
+f fae/22-x dev "see #22" fail
 f fae/4-x main "Closes #4" fail
 f dev staging "" pass
 f staging dev "" pass
