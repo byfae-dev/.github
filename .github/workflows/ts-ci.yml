@@ -1,0 +1,52 @@
+# Reusable TypeScript CI. Standard: brain/30-knowledge/engineering/{code-style,testing}.md
+name: ts-ci
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+      diff-coverage:
+        description: Minimum coverage (%) of changed lines on pull requests
+        type: number
+        default: 80
+
+permissions:
+  contents: read
+
+jobs:
+  ts:
+    name: lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # diff-cover compares against the base branch
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ${{ inputs.working-directory }}/.nvmrc  # same Node as local dev
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - run: npm ci
+      - name: biome
+        run: npx biome ci .
+      - name: tsc
+        run: npx tsc -b
+      - name: knip
+        run: npx knip
+      - name: vitest
+        run: npx vitest run --coverage
+      - name: diff coverage
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+          MIN: ${{ inputs.diff-coverage }}
+        run: pipx run diff-cover coverage/cobertura-coverage.xml --compare-branch="origin/$BASE" --fail-under="$MIN"
+      - name: build
+        run: npm run build

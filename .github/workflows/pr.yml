@@ -1,0 +1,11 @@
+# This repo runs its own PR checks from the PR's version of the workflow.
+name: pr
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    uses: ./.github/workflows/pr-checks.yml
