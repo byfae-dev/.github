@@ -1,16 +1,21 @@
 # By Fae — org defaults
 
-Shared by every repo in `byfae-dev`. Standards live in the brain: `30-knowledge/engineering/`.
+Shared by every repository in `byfae-dev`. The standards these files enforce live in the brain: `30-knowledge/engineering/` (code-style, git-workflow, testing, security).
+
+## Contents
 
 | Path | What |
 |---|---|
-| `.github/workflows/pr-checks.yml` | Reusable PR checks: Conventional Commit title (commitlint), branch flow, linked issue |
-| `.github/workflows/python-ci.yml` | Reusable Python CI: ruff, pyright, vulture, pytest, diff coverage ≥ 80 % |
+| `.github/workflows/pr-checks.yml` | Reusable PR checks: Conventional Commit title (commitlint), branch flow, linked issue on work PRs |
+| `.github/workflows/python-ci.yml` | Reusable Python CI: ruff format + lint, pyright, vulture, pytest, diff coverage ≥ 80 % |
 | `.github/workflows/ts-ci.yml` | Reusable TypeScript CI: Biome, tsc, knip, Vitest, diff coverage ≥ 80 %, build |
-| `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/` | Org-wide defaults (apply to repos without their own) |
-| `labels.txt` + `scripts/sync-labels.sh` | Workflow labels |
+| `.github/workflows/pr.yml` | Runs `pr-checks` on this repo's own PRs |
+| `.github/dependabot.yml` | Weekly action updates for this repo |
+| `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/` | Org-wide defaults for repos without their own |
+| `labels.txt`, `scripts/sync-labels.sh` | Workflow labels and the script that applies them |
+| `scripts/test-pr-checks.sh` | Self-check for `pr-checks.yml` — run it after changing that workflow |
 
-## Using the PR checks
+## Using the workflows
 
 ```yaml
 # .github/workflows/pr.yml in a repo
@@ -18,18 +23,26 @@ name: pr
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   checks:
     uses: byfae-dev/.github/.github/workflows/pr-checks.yml@main
     with:
-      scopes: api,orchestrator,web   # optional
+      scopes: api,web,deps,deps-dev   # optional; include deps,deps-dev for Dependabot
 ```
 
-Callers pin `@main`: changes here reach other repos only after `dev → staging → main`.
-
-## Using the CI workflows
-
 ```yaml
+# .github/workflows/ci.yml in a repo
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [dev, staging, main]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   backend:
     uses: byfae-dev/.github/.github/workflows/python-ci.yml@main
@@ -41,4 +54,13 @@ jobs:
       working-directory: web
 ```
 
-Python projects need `uv.lock`, ruff/pyright/vulture/pytest(-cov, `--cov-report=xml`)/diff-cover as dev dependencies. TS projects need `package-lock.json`, Biome, knip and Vitest with the `cobertura` coverage reporter.
+**Requirements of a calling project**
+- Python: `uv.lock`; dev dependencies ruff, pyright, vulture, pytest, pytest-cov (`--cov-report=xml`), diff-cover; `[tool.vulture]` paths configured.
+- TypeScript: `package-lock.json`, `.nvmrc` (CI uses the same Node version as local dev), Biome, knip, Vitest with the `cobertura` coverage reporter, a `build` script.
+
+## Rules for changing this repo
+
+- Callers pin `@main`: a change reaches other repos only after `dev → staging → main`.
+- Actions are pinned to commit SHAs with the version as a comment; Dependabot proposes updates.
+- Untrusted values (PR titles, bodies, branch names) are passed via `env`, never interpolated into scripts.
+- Every job has `timeout-minutes`; checkouts use `persist-credentials: false`.

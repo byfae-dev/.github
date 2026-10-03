@@ -15,6 +15,7 @@ jobs:
   title:
     name: conventional title
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Lint PR title with commitlint
         env:
@@ -34,12 +35,13 @@ jobs:
             },
           };
           JS
-          npm install --no-save --silent @commitlint/cli@19 @commitlint/config-conventional@19
+          npm install --no-save --silent @commitlint/cli@21 @commitlint/config-conventional@21
           printf '%s\n' "$TITLE" | npx --no-install commitlint --verbose
 
   flow:
     name: branch flow
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check source → target branch and linked issue
         env:
@@ -49,13 +51,13 @@ jobs:
         run: |
           ok() { echo "✓ $HEAD → $BASE"; exit 0; }
           case "$BASE" in
-            dev)     case "$HEAD" in fae/*|staging) ;; *) bad=1 ;; esac ;;
+            dev)     case "$HEAD" in fae/*|dependabot/*|staging) ;; *) bad=1 ;; esac ;;
             staging) case "$HEAD" in dev|main) ;; *) bad=1 ;; esac ;;
             main)    case "$HEAD" in staging|hotfix/*|release-please--*) ;; *) bad=1 ;; esac ;;
             *)       ok ;;  # stacked PRs onto feature branches are fine
           esac
           if [ -n "${bad:-}" ]; then
-            echo "::error::$HEAD → $BASE is not allowed. Flow: fae/* → dev → staging → main; hotfix/* → main; back-merges main → staging → dev."
+            echo "::error::$HEAD → $BASE is not allowed. Flow: fae/* and dependabot/* → dev → staging → main; hotfix/* → main; back-merges main → staging → dev."
             exit 1
           fi
           case "$HEAD" in
