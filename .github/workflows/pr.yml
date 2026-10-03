@@ -1,0 +1,8 @@
+# This repo runs its own PR checks from the PR's version of the workflow.
+name: pr
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+jobs:
+  checks:
+    uses: ./.github/workflows/pr-checks.yml
