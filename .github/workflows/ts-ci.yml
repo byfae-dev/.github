@@ -1,4 +1,5 @@
-# Reusable TypeScript CI. Standard: brain/30-knowledge/engineering/{code-style,testing}.md
+# Reusable TypeScript CI on Bun (ADR-0019 in project-fae).
+# Standard: brain/30-knowledge/engineering/{code-style,testing}.md
 name: ts-ci
 
 on:
@@ -28,25 +29,23 @@ jobs:
         with:
           fetch-depth: 0  # diff-cover compares against the base branch
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          node-version-file: ${{ inputs.working-directory }}/.nvmrc  # same Node as local dev
-          cache: npm
-          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
-      - run: npm ci
+          bun-version-file: ${{ inputs.working-directory }}/package.json  # "packageManager": "bun@x.y.z"
+      - run: bun install --frozen-lockfile
       - name: biome
-        run: npx biome ci .
+        run: bun run check
       - name: tsc
-        run: npx tsc -b
+        run: bun run typecheck
       - name: knip
-        run: npx knip
-      - name: vitest
-        run: npx vitest run --coverage
+        run: bun run knip
+      - name: test
+        run: bun run coverage
       - name: diff coverage
         if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.base_ref }}
           MIN: ${{ inputs.diff-coverage }}
-        run: pipx run diff-cover coverage/cobertura-coverage.xml --compare-branch="origin/$BASE" --fail-under="$MIN"
+        run: pipx run diff-cover coverage/lcov.info --compare-branch="origin/$BASE" --fail-under="$MIN"
       - name: build
-        run: npm run build
+        run: bun run build

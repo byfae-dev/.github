@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Self-check for .github/workflows/pr-checks.yml: extracts the real step scripts and runs them
-# against known-good and known-bad cases. Needs node + python3 with PyYAML.
+# against known-good and known-bad cases. Needs bun + python3 with PyYAML.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd); tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; cd "$tmp"
 python3 - "$root/.github/workflows/pr-checks.yml" <<'PY'
 import sys, yaml
 w = yaml.safe_load(open(sys.argv[1]))
-open("title.sh", "w").write(w["jobs"]["title"]["steps"][0]["run"].replace(" --verbose", ""))
-open("flow.sh", "w").write(w["jobs"]["flow"]["steps"][0]["run"])
+def step(job, name):
+    return next(s["run"] for s in w["jobs"][job]["steps"] if s.get("name") == name)
+open("title.sh", "w").write(step("title", "Lint PR title with commitlint").replace(" --verbose", ""))
+open("flow.sh", "w").write(step("flow", "Check source → target branch and linked issue"))
 PY
 fails=0
 check() { [ "$1" = "$2" ] && echo "ok   $3" || { echo "FAIL $3 (got $1)"; fails=$((fails+1)); }; }
