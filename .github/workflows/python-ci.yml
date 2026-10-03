@@ -1,0 +1,51 @@
+# Reusable Python CI. Standard: brain/30-knowledge/engineering/{code-style,testing}.md
+name: python-ci
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+      diff-coverage:
+        description: Minimum coverage (%) of changed lines on pull requests
+        type: number
+        default: 80
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # diff-cover compares against the base branch
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: ruff format
+        run: uv run ruff format --check .
+      - name: ruff lint
+        run: uv run ruff check .
+      - name: pyright
+        run: uv run pyright
+      - name: vulture
+        run: uv run vulture
+      - name: pytest
+        run: uv run pytest
+      - name: diff coverage
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+          MIN: ${{ inputs.diff-coverage }}
+        run: uv run diff-cover coverage.xml --compare-branch="origin/$BASE" --fail-under="$MIN"
