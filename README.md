@@ -6,7 +6,7 @@ Shared by every repository in `byfae-dev`. The standards these files enforce liv
 
 | Path | What |
 |---|---|
-| `.github/workflows/pr-checks.yml` | Reusable PR checks: Conventional Commit title (commitlint), branch flow, linked issue on work PRs |
+| `.github/workflows/pr-checks.yml` | Reusable PR checks: Conventional Commit title (commitlint), branch flow, linked issue on work PRs (`Closes #N` or `Refs #N`) |
 | `.github/workflows/python-ci.yml` | Reusable Python CI: ruff format + lint, pyright, vulture, pytest, diff coverage ≥ 80 % |
 | `.github/workflows/ts-ci.yml` | Reusable TypeScript CI: Biome, tsc, knip, Vitest, diff coverage ≥ 80 %, build |
 | `.github/workflows/pr.yml` | Runs `pr-checks` on this repo's own PRs |
