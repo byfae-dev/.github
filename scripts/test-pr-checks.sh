@@ -15,6 +15,8 @@ t() { TITLE="$1" SCOPES="$2" bash title.sh >/dev/null 2>&1 && r=pass || r=fail; 
 f() { HEAD=$1 BASE=$2 BODY="$3" bash flow.sh >/dev/null 2>&1 && r=pass || r=fail; check $r "$4" "flow: $1 → $2"; }
 
 t "docs: add PRD" "" pass
+t "build(deps): bump the py group in /backend with 3 updates" "deps,deps-dev" pass
+t "build(deps-dev): bump vitest from 5.0.3 to 5.1.0 in /web" "deps,deps-dev" pass
 t "feat(api): add run listing endpoint" "api,web" pass
 t "feat(nope): x" "api,web" fail
 t "Added stuff" "" fail
@@ -32,5 +34,7 @@ f staging main "" pass
 f hotfix/9-y main "Fixes #9" pass
 f release-please--branches--main main "" pass
 f random dev "" fail
+f dependabot/uv/backend/fastapi-0.143.0 dev "" pass
+f dependabot/npm_and_yarn/web/vite-8.4.0 main "" fail
 f fae/5-y fae/4-x "" pass
 exit $fails
