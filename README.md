@@ -11,7 +11,7 @@ Shared by every repository in `byfae-dev`. The standards these files enforce liv
 | `.github/workflows/ts-ci.yml` | Reusable TypeScript CI on Bun: Biome, tsc, knip, `bun test`, diff coverage ≥ 80 %, build |
 | `.github/workflows/pr.yml` | Runs `pr-checks` on this repo's own PRs |
 | `.github/dependabot.yml` | Weekly action updates for this repo |
-| `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/` | Org-wide defaults for repos without their own |
+| `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/` | Org-wide defaults for repos without their own; the shapes they start from are defined in the brain (`commit-and-pr`, agent brief) |
 | `labels.txt`, `scripts/sync-labels.sh` | Workflow labels and the script that applies them |
 | `scripts/test-pr-checks.sh` | Self-check for `pr-checks.yml` — run it after changing that workflow (needs Bun) |
 
