@@ -23,9 +23,8 @@ name: pr
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
-concurrency:
-  group: pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# No cancel-in-progress: a PR edit and push can arrive together (release-please does both);
+# a cancelled run counts as a failing required check. These checks take seconds.
 jobs:
   checks:
     uses: byfae-dev/.github/.github/workflows/pr-checks.yml@main
