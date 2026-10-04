@@ -14,4 +14,5 @@ Closes #
 ## Review focus
 -
 
-<!-- FAE agents: append "Run-Id: <id>". Promotion PRs (dev → staging → main): list the included PRs instead and delete "Closes". -->
+<!-- "Closes #N" when this PR resolves the issue; "Refs #N" for a supporting PR that another PR closes.
+FAE agents: append "Run-Id: <id>". Promotion, back-merge and release PRs: list what's included instead. -->
