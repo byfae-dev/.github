@@ -1,18 +1,13 @@
-<!-- Title = Conventional Commit subject, e.g. "feat(api): add run listing endpoint". It becomes the squash commit. -->
+<!-- Title = Conventional Commit header, e.g. "feat(api): add run listing endpoint". The body becomes the squash commit.
+Shape: brain 50-skills/commit-and-pr → Open the PR. Endings and promotions: brain git-workflow → Pull requests. -->
 
 Closes #
 
 ## What
 -
 
-## Why
-<!-- Only if not obvious from the issue. -->
-
-## How to test
+## Verified
 -
 
-## Review focus
--
-
-<!-- "Closes #N" when this PR resolves the issue; "Refs #N" for a supporting PR that another PR closes.
-FAE agents: append "Run-Id: <id>". Promotion, back-merge and release PRs: list what's included instead. -->
+<!-- Optional "## Notes" (decisions, limits, follow-ups) or another "## …" section that carries something; leave out empty ones.
+"Refs #N" instead of "Closes #N" for a supporting PR that another PR closes. -->
