@@ -38,7 +38,8 @@ jobs:
             },
           };
           JS
-          bun add --silent @commitlint/cli@21 @commitlint/config-conventional@21
+          # Exact versions, bumped by PR — Dependabot can't see an inline install.
+          bun add --silent --exact @commitlint/cli@21.2.3 @commitlint/config-conventional@21.2.3
           printf '%s\n' "$TITLE" | bunx --bun commitlint --verbose
 
   flow:
