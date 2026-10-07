@@ -4,3 +4,4 @@ agent:doing|1D76DB|An agent run is in progress
 agent:review|5319E7|PR open, Reviewer agent checking
 board:approve|FBCA04|Waiting for the board to merge/approve
 board:question|D93F0B|Blocked: needs a board decision
+board:rejected|6E7781|PR closed unmerged: board retries (agent:todo) or closes the issue
