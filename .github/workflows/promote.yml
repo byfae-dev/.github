@@ -2,8 +2,9 @@
 # brain/30-knowledge/engineering/git-workflow.md → Merging. Callers run it on every push to dev,
 # staging and main: it opens the PR that push calls for, waits for its required checks and, when
 # every one passed, merges it as the byfae-release app — a ruleset bypass actor (pull requests
-# only), which takes it past the required review (board decision 2026-10-09). Red checks leave
-# the PR open for the board. staging → main and releases stay the board's.
+# only), which takes it past the required review (board decision 2026-10-09). Red checks or a
+# conflict leave the PR open for the board. staging → main is kept open for the board, never
+# merged here; releases stay the board's.
 name: promote
 
 on:
@@ -71,7 +72,7 @@ jobs:
             staging) if ahead dev staging; then plan staging dev squash "back-merge staging into dev"; fi ;;
           esac
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        if: steps.plan.outputs.head != ''
+        if: steps.plan.outputs.head != '' || github.ref_name == 'staging'
         id: app-token
         with:
           client-id: ${{ vars.BYFAE_RELEASE_CLIENT_ID }}
@@ -102,8 +103,24 @@ jobs:
           fi
           # Merge only the commit whose required checks all passed; a push meanwhile starts over.
           for _ in $(seq $((1200 / (POLL_SECONDS > 0 ? POLL_SECONDS : 1)))); do
-            sha=$(gh pr view "$pr" "${repo[@]}" --json headRefOid -q .headRefOid)
-            buckets=$(gh pr checks "$pr" "${repo[@]}" --required --json bucket -q '[.[].bucket] | join(" ")' || true)
+            read -r sha mergeable < <(gh pr view "$pr" "${repo[@]}" --json headRefOid,mergeable -q '"\(.headRefOid) \(.mergeable)"')
+            if [ "$mergeable" = CONFLICTING ]; then
+              {
+                cat "$RUNNER_TEMP/body.md"
+                echo
+                echo "**Conflicts with \`$BASE\`** — left for the board. Resolve it on a \`fae/\` branch from \`dev\` that merges \`$BASE\` in, as a work PR into \`dev\`; this PR then goes on by itself."
+              } > "$RUNNER_TEMP/conflict.md"
+              gh pr edit "$pr" "${repo[@]}" --body-file "$RUNNER_TEMP/conflict.md" >/dev/null
+              echo "::notice::#$pr conflicts with $BASE — left for the board"
+              exit 0
+            fi
+            buckets=$(gh pr checks "$pr" "${repo[@]}" --required --json bucket -q '[.[].bucket] | join(" ")' 2>"$RUNNER_TEMP/checks.err") || true
+            # Not yet reported is a wait; anything else GitHub refuses (a missing permission) fails
+            # the run where the board sees it, instead of waiting it out.
+            if [ -s "$RUNNER_TEMP/checks.err" ] && ! grep -q 'no .*checks reported' "$RUNNER_TEMP/checks.err"; then
+              echo "::error::can't read #$pr's checks: $(head -c 500 "$RUNNER_TEMP/checks.err")"
+              exit 1
+            fi
             case " $buckets " in
               *" fail "* | *" cancel "*)
                 echo "::notice::#$pr has failing required checks — left for the board"
@@ -118,3 +135,28 @@ jobs:
             sleep "$POLL_SECONDS"
           done
           echo "::notice::#$pr's required checks still run after 20 minutes — left for the board"
+      - name: Keep staging → main open for the board
+        if: github.ref_name == 'staging'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Only when staging has changes main lacks; the board merges it when main should move on.
+          since=$(git merge-base origin/main origin/staging)
+          if git diff --quiet origin/main origin/staging || git diff --quiet "$since" origin/staging; then
+            exit 0
+          fi
+          {
+            echo "Promotion \`staging → main\`, for the board: **merge with a merge commit** when \`main\` should move on. Kept up to date by \`promote.yml\`; never merged by it."
+            echo
+            echo "Included:"
+            git log --no-merges --format='- %s' "$since..origin/staging"
+          } > "$RUNNER_TEMP/main.md"
+          repo=(--repo "$GITHUB_REPOSITORY")
+          pr=$(gh pr list "${repo[@]}" --head staging --base main --state open --json number -q '.[0].number')
+          if [ -z "$pr" ]; then
+            gh pr create "${repo[@]}" --head staging --base main --title "chore: promote staging to main" --body-file "$RUNNER_TEMP/main.md"
+          else
+            gh pr edit "$pr" "${repo[@]}" --body-file "$RUNNER_TEMP/main.md" >/dev/null
+            echo "::notice::#$pr is up to date for the board"
+          fi
