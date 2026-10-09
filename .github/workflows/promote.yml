@@ -1,0 +1,100 @@
+# Reusable promotions and back-merges for every By Fae repo (byfae-dev/project-fae#208). Standard:
+# brain/30-knowledge/engineering/git-workflow.md → Merging. Callers run it on every push to dev,
+# staging and main: it opens the PR that push calls for, and GitHub merges it once its checks pass,
+# as the byfae-release app (a ruleset bypass actor, pull requests only). Red checks leave the PR
+# open for the board. staging → main and releases stay the board's.
+name: promote
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  promote:
+    name: promote or back-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # One at a time per pushed branch: a second push waits instead of opening a second PR.
+    concurrency:
+      group: promote-${{ github.repository }}-${{ github.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every branch, with history: the decision compares them
+          persist-credentials: false
+      - name: Decide what to merge
+        id: plan
+        env:
+          PUSHED: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # $2 has changes that $1 lacks: their contents differ, and $2 changed since they split.
+          # Equal contents (the squash back into dev, a promotion just merged) need nothing.
+          ahead() {
+            ! git diff --quiet "origin/$1" "origin/$2" &&
+              ! git diff --quiet "$(git merge-base "origin/$1" "origin/$2")" "origin/$2"
+          }
+          plan() {
+            local head=$1 base=$2 method=$3 kind=$4 since version
+            since=$(git merge-base "origin/$base" "origin/$head")
+            version=$(git show "origin/$head:version.txt" 2>/dev/null || true)
+            title="chore: $kind"
+            if [ "$kind" != "promote dev to staging" ] && [ -n "$version" ]; then
+              title="$title after v$version"
+            fi
+            ci=false
+            if git diff --name-only "$since" "origin/$head" | grep -q '^\.github/workflows/'; then
+              ci=true
+            fi
+            {
+              echo "head=$head"; echo "base=$base"; echo "method=$method"
+              echo "title=$title"; echo "ci=$ci"
+            } >> "$GITHUB_OUTPUT"
+            {
+              if [ "$ci" = true ]; then
+                echo "Automatic \`$head → $base\`. **Changes CI** (\`.github/workflows/\`), which the release app may not merge: **the board merges it**, with a ${method/merge/merge commit}."
+              else
+                echo "Automatic \`$head → $base\`: merges itself with a ${method/merge/merge commit} once its checks pass (git-workflow → Merging). Red checks leave it open for the board."
+              fi
+              echo
+              echo "Included:"
+              git log --no-merges --format='- %s' "$since..origin/$head"
+            } > "$RUNNER_TEMP/body.md"
+          }
+          case "$PUSHED" in
+            dev) if ahead staging dev; then plan dev staging merge "promote dev to staging"; fi ;;
+            main) if ahead staging main; then plan main staging merge "back-merge main into staging"; fi ;;
+            staging) if ahead dev staging; then plan staging dev squash "back-merge staging into dev"; fi ;;
+          esac
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: steps.plan.outputs.head != ''
+        id: app-token
+        with:
+          client-id: ${{ vars.BYFAE_RELEASE_CLIENT_ID }}
+          private-key: ${{ secrets.BYFAE_RELEASE_KEY }}
+      - name: Open the PR and let it merge itself
+        if: steps.plan.outputs.head != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD: ${{ steps.plan.outputs.head }}
+          BASE: ${{ steps.plan.outputs.base }}
+          METHOD: ${{ steps.plan.outputs.method }}
+          TITLE: ${{ steps.plan.outputs.title }}
+          CI: ${{ steps.plan.outputs.ci }}
+        run: |
+          set -euo pipefail
+          repo=(--repo "$GITHUB_REPOSITORY")
+          pr=$(gh pr list "${repo[@]}" --head "$HEAD" --base "$BASE" --state open --json number -q '.[0].number')
+          if [ -z "$pr" ]; then
+            url=$(gh pr create "${repo[@]}" --head "$HEAD" --base "$BASE" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md")
+            pr=${url##*/}
+          else
+            gh pr edit "$pr" "${repo[@]}" --body-file "$RUNNER_TEMP/body.md" >/dev/null
+          fi
+          if [ "$CI" = true ]; then
+            echo "::notice::#$pr changes .github/workflows/ — left for the board"
+            exit 0
+          fi
+          gh pr merge "$pr" "${repo[@]}" --auto "--$METHOD"
+          echo "::notice::#$pr merges itself with --$METHOD once its checks pass"
