@@ -10,7 +10,8 @@ job = w["jobs"]["promote"]
 # The checkout reads the repo with Actions' own token: without contents: read a private repo is
 # "not found" (it was, on the first live run).
 assert (job.get("permissions") or {}).get("contents") == "read", "promote needs contents: read"
-for name, file in (("Decide what to merge", "decide.sh"), ("Open the PR and merge it when green", "merge.sh")):
+for name, file in (("Decide what to merge", "decide.sh"), ("Open the PR and merge it when green", "merge.sh"),
+                   ("Keep staging → main open for the board", "main.sh")):
     open(file, "w").write(next(s["run"] for s in job["steps"] if s.get("name") == name))
 PY
 [ -f decide.sh ] || { echo "FAIL the workflow's permissions"; exit 1; }
@@ -71,19 +72,27 @@ cat > "$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 next() { local n; n=$(cat "$FAKE/$1.n" 2>/dev/null || echo 1); sed -n "${n}p" "$FAKE/$1"; echo $((n + 1)) > "$FAKE/$1.n"; }
 case "$1 $2" in
-  "pr list") ;;
-  "pr create") echo "https://github.com/o/r/pull/7" ;;
-  "pr edit") ;;
-  "pr view") next shas ;;
-  "pr checks") next checks ;;
+  "pr list") cat "$FAKE/open" 2>/dev/null || true ;;
+  "pr create") echo "create ${*:3}" >> "$FAKE/calls"; echo "https://github.com/o/r/pull/7" ;;
+  "pr edit") echo "edit ${*:3}" >> "$FAKE/calls"; cp "${@: -1}" "$FAKE/body" 2>/dev/null ;;
+  "pr view")
+    sha=$(next shas)
+    if [[ " $* " == *mergeable* ]]; then echo "$sha $(next mergeable)"; else echo "$sha"; fi ;;
+  "pr checks")
+    line=$(next checks)
+    case "$line" in
+      ERR*) echo "GraphQL: Resource not accessible by integration" >&2; exit 1 ;;
+      NONE) echo "no required checks reported on the 'dev' branch" >&2; exit 1 ;;
+      *) echo "$line" ;;
+    esac ;;
   "pr merge") echo "${*:3}" >> "$FAKE/merged" ;;
 esac
 GH
 chmod +x "$tmp/bin/gh" "$tmp/bin/sleep"
-# merge CI SHAS CHECKS → what the step merged, or "nothing"
+# merge CI SHAS CHECKS [MERGEABLE] → what the step merged, or "nothing"; "error" when it failed
 merge() {
   export FAKE="$tmp/fake"; rm -rf "$FAKE"; mkdir -p "$FAKE"
-  printf '%b' "$2" > "$FAKE/shas"; printf '%b' "$3" > "$FAKE/checks"
+  printf '%b' "$2" > "$FAKE/shas"; printf '%b' "$3" > "$FAKE/checks"; printf '%b' "${4:-}" > "$FAKE/mergeable"
   echo body > "$tmp/body.md"
   PATH="$tmp/bin:$PATH" GITHUB_REPOSITORY=o/r HEAD=dev BASE=staging METHOD=merge TITLE=t CI=$1 \
     POLL_SECONDS=600 bash "$tmp/merge.sh" >/dev/null 2>&1 || { echo error; return; }
@@ -98,5 +107,27 @@ check "$(merge false 'a\nb\nb\nb\n' 'pass pass\npass pass\n')" \
   "7 --repo o/r --admin --merge --match-head-commit b" "a push while it checked: only the new head is merged"
 check "$(merge false 'a\na\na\na\n' '\n\n')" nothing "no checks reported in 20 minutes: left for the board"
 check "$(merge false 'a\na\na\na\n' 'pending pass\npending pass\n')" nothing "checks still running after 20 minutes: left for the board"
+check "$(merge false 'a\na\n' 'pass pass\n' 'CONFLICTING\n')" nothing "a conflict: left for the board"
+grep -q "Conflicts with \`staging\`" "$tmp/fake/body"; check $? 0 "…and the PR says so"
+check "$(merge false 'a\na\n' 'ERR\n')" error "checks GitHub won't show: the run fails, no waiting"
+check "$(merge false 'a\na\na\na\n' 'NONE\npass pass\n')" \
+  "7 --repo o/r --admin --merge --match-head-commit a" "checks not reported yet: it waits, then merges"
+
+# staging → main is opened and kept up to date for the board, never merged.
+main_pr() {
+  export FAKE="$tmp/fake"; rm -rf "$FAKE"; mkdir -p "$FAKE"; printf '%s' "${1:-}" > "$FAKE/open"
+  git push -q origin dev staging main 2>/dev/null
+  ( cd "$tmp/work" && git fetch -q origin && PATH="$tmp/bin:$PATH" GITHUB_REPOSITORY=o/r bash "$tmp/main.sh" ) >/dev/null 2>&1 || { echo error; return; }
+  cut -d' ' -f1 "$FAKE/calls" 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || true
+  [ -s "$FAKE/calls" ] || echo nothing
+}
+on staging
+check "$(main_pr)" nothing "staging equal to main: no promotion to main"
+work three; on staging; git merge -q --no-ff -m "chore: promote dev to staging (#12)" dev
+check "$(main_pr)" create "staging ahead of main: a PR for the board"
+grep -q -- "- feat: three" "$tmp/fake/body" 2>/dev/null || grep -q -- "- feat: three" "$tmp/main.md"; check $? 0 "…listing what main lacks"
+check "$(main_pr 13)" edit "an open one is kept up to date, not doubled"
+grep -q "never merged" "$RUNNER_TEMP/main.md"; check $? 0 "…and never merged by the app"
+grep -q -- "--admin\|pr merge" "$tmp/main.sh"; check $? 1 "the staging → main step can't merge"
 
 [ "$fails" -eq 0 ] && echo "all promote checks pass" || { echo "$fails failing"; exit 1; }

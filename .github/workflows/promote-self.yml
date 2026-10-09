@@ -1,0 +1,8 @@
+name: promote
+on:
+  push:
+    branches: [dev, staging, main]
+jobs:
+  promote:
+    uses: ./.github/workflows/promote.yml # this repo's own version of it
+    secrets: inherit # BYFAE_RELEASE_KEY (org secret); BYFAE_RELEASE_CLIENT_ID is an org variable
