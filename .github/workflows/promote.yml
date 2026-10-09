@@ -15,6 +15,8 @@ jobs:
     name: promote or back-merge
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read # the checkout; everything that writes uses the release app's token
     # One at a time per pushed branch: a second push waits instead of opening a second PR.
     concurrency:
       group: promote-${{ github.repository }}-${{ github.ref }}
