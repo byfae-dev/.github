@@ -1,8 +1,9 @@
 # Reusable promotions and back-merges for every By Fae repo (byfae-dev/project-fae#208). Standard:
 # brain/30-knowledge/engineering/git-workflow.md → Merging. Callers run it on every push to dev,
-# staging and main: it opens the PR that push calls for, and GitHub merges it once its checks pass,
-# as the byfae-release app (a ruleset bypass actor, pull requests only). Red checks leave the PR
-# open for the board. staging → main and releases stay the board's.
+# staging and main: it opens the PR that push calls for, waits for its required checks and, when
+# every one passed, merges it as the byfae-release app — a ruleset bypass actor (pull requests
+# only), which takes it past the required review (board decision 2026-10-09). Red checks leave
+# the PR open for the board. staging → main and releases stay the board's.
 name: promote
 
 on:
@@ -14,7 +15,7 @@ jobs:
   promote:
     name: promote or back-merge
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25 # the wait for the PR's checks is capped at 20
     permissions:
       contents: read # the checkout; everything that writes uses the release app's token
     # One at a time per pushed branch: a second push waits instead of opening a second PR.
@@ -57,7 +58,7 @@ jobs:
               if [ "$ci" = true ]; then
                 echo "Automatic \`$head → $base\`. **Changes CI** (\`.github/workflows/\`), which the release app may not merge: **the board merges it**, with a ${method/merge/merge commit}."
               else
-                echo "Automatic \`$head → $base\`: merges itself with a ${method/merge/merge commit} once its checks pass (git-workflow → Merging). Red checks leave it open for the board."
+                echo "Automatic \`$head → $base\`: merges itself with a ${method/merge/merge commit} once its required checks pass (git-workflow → Merging). Red checks leave it open for the board."
               fi
               echo
               echo "Included:"
@@ -75,9 +76,10 @@ jobs:
         with:
           client-id: ${{ vars.BYFAE_RELEASE_CLIENT_ID }}
           private-key: ${{ secrets.BYFAE_RELEASE_KEY }}
-      - name: Open the PR and let it merge itself
+      - name: Open the PR and merge it when green
         if: steps.plan.outputs.head != ''
         env:
+          POLL_SECONDS: 20
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           HEAD: ${{ steps.plan.outputs.head }}
           BASE: ${{ steps.plan.outputs.base }}
@@ -98,5 +100,21 @@ jobs:
             echo "::notice::#$pr changes .github/workflows/ — left for the board"
             exit 0
           fi
-          gh pr merge "$pr" "${repo[@]}" --auto "--$METHOD"
-          echo "::notice::#$pr merges itself with --$METHOD once its checks pass"
+          # Merge only the commit whose required checks all passed; a push meanwhile starts over.
+          for _ in $(seq $((1200 / (POLL_SECONDS > 0 ? POLL_SECONDS : 1)))); do
+            sha=$(gh pr view "$pr" "${repo[@]}" --json headRefOid -q .headRefOid)
+            buckets=$(gh pr checks "$pr" "${repo[@]}" --required --json bucket -q '[.[].bucket] | join(" ")' || true)
+            case " $buckets " in
+              *" fail "* | *" cancel "*)
+                echo "::notice::#$pr has failing required checks — left for the board"
+                exit 0 ;;
+            esac
+            if [ -n "$buckets" ] && [[ " $buckets " != *" pending "* ]] &&
+              [ "$sha" = "$(gh pr view "$pr" "${repo[@]}" --json headRefOid -q .headRefOid)" ]; then
+              gh pr merge "$pr" "${repo[@]}" --admin "--$METHOD" --match-head-commit "$sha"
+              echo "::notice::#$pr merged with --$METHOD"
+              exit 0
+            fi
+            sleep "$POLL_SECONDS"
+          done
+          echo "::notice::#$pr's required checks still run after 20 minutes — left for the board"

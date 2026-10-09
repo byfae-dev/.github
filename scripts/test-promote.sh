@@ -10,8 +10,8 @@ job = w["jobs"]["promote"]
 # The checkout reads the repo with Actions' own token: without contents: read a private repo is
 # "not found" (it was, on the first live run).
 assert (job.get("permissions") or {}).get("contents") == "read", "promote needs contents: read"
-run = next(s["run"] for s in job["steps"] if s.get("name") == "Decide what to merge")
-open("decide.sh", "w").write(run)
+for name, file in (("Decide what to merge", "decide.sh"), ("Open the PR and merge it when green", "merge.sh")):
+    open(file, "w").write(next(s["run"] for s in job["steps"] if s.get("name") == name))
 PY
 [ -f decide.sh ] || { echo "FAIL the workflow's permissions"; exit 1; }
 export RUNNER_TEMP=$tmp GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -63,5 +63,40 @@ echo 0.3.0 > version.txt; git commit -qam "chore: release 0.3.0 (#9)"
 on staging; git merge -q --no-ff -m "chore: back-merge main into staging after v0.3.0 (#10)" main
 on dev; git merge -q --squash staging >/dev/null 2>&1 && git commit -qm "chore: back-merge staging into dev after v0.3.0 (#11)"
 check "$(decide dev)" nothing "a release back-merged into a quiet dev starts no promotion"
+
+# The merge step, against a fake gh: it plays back the PR's head commit and its required checks
+# (one line per read) and records merges. `sleep` returns at once.
+mkdir -p "$tmp/bin"; printf '#!/bin/sh\n' > "$tmp/bin/sleep"
+cat > "$tmp/bin/gh" <<'GH'
+#!/usr/bin/env bash
+next() { local n; n=$(cat "$FAKE/$1.n" 2>/dev/null || echo 1); sed -n "${n}p" "$FAKE/$1"; echo $((n + 1)) > "$FAKE/$1.n"; }
+case "$1 $2" in
+  "pr list") ;;
+  "pr create") echo "https://github.com/o/r/pull/7" ;;
+  "pr edit") ;;
+  "pr view") next shas ;;
+  "pr checks") next checks ;;
+  "pr merge") echo "${*:3}" >> "$FAKE/merged" ;;
+esac
+GH
+chmod +x "$tmp/bin/gh" "$tmp/bin/sleep"
+# merge CI SHAS CHECKS → what the step merged, or "nothing"
+merge() {
+  export FAKE="$tmp/fake"; rm -rf "$FAKE"; mkdir -p "$FAKE"
+  printf '%b' "$2" > "$FAKE/shas"; printf '%b' "$3" > "$FAKE/checks"
+  echo body > "$tmp/body.md"
+  PATH="$tmp/bin:$PATH" GITHUB_REPOSITORY=o/r HEAD=dev BASE=staging METHOD=merge TITLE=t CI=$1 \
+    POLL_SECONDS=600 bash "$tmp/merge.sh" >/dev/null 2>&1 || { echo error; return; }
+  cat "$FAKE/merged" 2>/dev/null || echo nothing
+}
+check "$(merge false 'a\na\na\na\n' 'pending pass\npass pass\n')" \
+  "7 --repo o/r --admin --merge --match-head-commit a" "green required checks: merged, that commit only"
+check "$(merge false 'a\na\n' 'pass fail\n')" nothing "a red required check: left for the board"
+check "$(merge false 'a\na\n' 'pass cancel\n')" nothing "a cancelled one too"
+check "$(merge true 'a\na\n' 'pass pass\n')" nothing "a CI change: left for the board"
+check "$(merge false 'a\nb\nb\nb\n' 'pass pass\npass pass\n')" \
+  "7 --repo o/r --admin --merge --match-head-commit b" "a push while it checked: only the new head is merged"
+check "$(merge false 'a\na\na\na\n' '\n\n')" nothing "no checks reported in 20 minutes: left for the board"
+check "$(merge false 'a\na\na\na\n' 'pending pass\npending pass\n')" nothing "checks still running after 20 minutes: left for the board"
 
 [ "$fails" -eq 0 ] && echo "all promote checks pass" || { echo "$fails failing"; exit 1; }
