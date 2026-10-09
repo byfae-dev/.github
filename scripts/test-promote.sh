@@ -6,9 +6,14 @@ root=$(cd "$(dirname "$0")/.." && pwd); tmp=$(mktemp -d); trap 'rm -rf "$tmp"' E
 python3 - "$root/.github/workflows/promote.yml" <<'PY'
 import sys, yaml
 w = yaml.safe_load(open(sys.argv[1]))
-run = next(s["run"] for s in w["jobs"]["promote"]["steps"] if s.get("name") == "Decide what to merge")
+job = w["jobs"]["promote"]
+# The checkout reads the repo with Actions' own token: without contents: read a private repo is
+# "not found" (it was, on the first live run).
+assert (job.get("permissions") or {}).get("contents") == "read", "promote needs contents: read"
+run = next(s["run"] for s in job["steps"] if s.get("name") == "Decide what to merge")
 open("decide.sh", "w").write(run)
 PY
+[ -f decide.sh ] || { echo "FAIL the workflow's permissions"; exit 1; }
 export RUNNER_TEMP=$tmp GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 git init -q --bare origin.git && git clone -q origin.git work 2>/dev/null && cd work
 git switch -q -c main && echo 0.1.0 > version.txt && git add . && git commit -qm "chore: start"
