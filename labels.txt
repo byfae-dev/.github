@@ -5,3 +5,6 @@ agent:review|5319E7|PR open, Reviewer agent checking
 board:approve|FBCA04|Waiting for the board to merge/approve
 board:question|D93F0B|Blocked: needs a board decision
 board:rejected|6E7781|PR closed unmerged: board retries (agent:todo) or closes the issue
+no-review|C5DEF5|Board: done work skips the Reviewer and goes to board:approve
+agent:plan|8B5CF6|Board: the Planner plans the goal this issue names
+agent:tickets|6F42C1|Board: plan approved, the Planner files its tickets
